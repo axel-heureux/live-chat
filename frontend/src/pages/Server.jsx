@@ -1,8 +1,17 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 export default function Server() {
   const [ownServers, setOwnServers] = useState([])
+  const [userId, setUserId] = useState(null)
+  const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    const id = searchParams.get('id')
+    if (id) {
+      setUserId(id)
+    }
+  }, [searchParams])
   const [selectedServer, setSelectedServer] = useState(null)
   const [form, setForm] = useState({ name: '', description: '' })
   const [editId, setEditId] = useState(null)
