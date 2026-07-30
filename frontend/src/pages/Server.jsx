@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export default function Server() {
   const [ownServers, setOwnServers] = useState([])
@@ -24,27 +26,65 @@ export default function Server() {
     setForm((current) => ({ ...current, [name]: value }))
   }
 
-  const handleCreateOrUpdate = () => {
+  const handleCreateOrUpdate = async () => {
     if (!form.name.trim()) return
 
-    if (editId) {
-      setOwnServers((current) =>
-        current.map((item) =>
-          item.id === editId ? { ...item, name: form.name, description: form.description } : item
-        )
-      )
-      setEditId(null)
-    } else {
-      const newServer = {
-        id: `server-${Date.now()}`,
-        name: form.name,
-        description: form.description || 'Serveur personnel.'
-      }
-      setOwnServers((current) => [...current, newServer])
-      setSelectedServer(newServer.id)
-    }
+    try {
+      if (editId) {
+        // persist update
+        const res = await fetch(`${API_URL}/servers/${editId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: form.name, description: form.description })
+        })
+        if (!res.ok) throw new Error('Erreur lors de la mise à jour')
+      } else {
+        const newServer = {
+          id: `server-${Date.now()}`,
+          name: form.name,
+          description: form.description || 'Serveur personnel.',
+          owner_id: userId || null
+        }
 
-    setForm({ name: '', description: '' })
+        const res = await fetch(`${API_URL}/servers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newServer)
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.message || 'Erreur lors de la création du serveur')
+        }
+      }
+
+      // reload servers from backend (no front cache)
+      await loadServers()
+      setForm({ name: '', description: '' })
+      setEditId(null)
+    } catch (err) {
+      console.error('Failed to create/update server:', err)
+    }
+  }
+
+  useEffect(() => {
+    // load servers from backend (only servers owned by this user)
+    loadServers()
+  }, [userId])
+
+  async function loadServers() {
+    try {
+      const res = await fetch(`${API_URL}/servers`)
+      if (!res.ok) return setOwnServers([])
+      const data = await res.json()
+      if (userId) {
+        setOwnServers(data.filter((s) => s.owner_id === userId))
+      } else {
+        setOwnServers([])
+      }
+    } catch (err) {
+      console.error('Failed to load servers:', err)
+      setOwnServers([])
+    }
   }
 
   const handleEdit = (server) => {
@@ -53,10 +93,20 @@ export default function Server() {
   }
 
   const handleDelete = (serverId) => {
-    setOwnServers((current) => current.filter((item) => item.id !== serverId))
-    if (selectedServer === serverId) {
-      setSelectedServer(null)
-    }
+    // delete on backend then reload list
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_URL}/servers/${serverId}`, { method: 'DELETE' })
+        if (!res.ok) {
+          console.warn('Delete returned', res.status)
+        }
+      } catch (err) {
+        console.error('Failed to delete on server:', err)
+      } finally {
+        await loadServers()
+        if (selectedServer === serverId) setSelectedServer(null)
+      }
+    })()
   }
 
   return (
@@ -107,51 +157,44 @@ export default function Server() {
                   Annuler
                 </button>
               )}
+              <div className="logout-action">
+                <Link to="/" className="text-btn danger">Déconnexion</Link>
+              </div>
             </div>
-
-            <div className="panel-card server-list-card">
-              <h2>Mes serveurs</h2>
-              <ul>
-                {ownServers.length > 0 ? (
-                  ownServers.map((server) => (
-                    <li key={server.id} className={server.id === selectedServer ? 'active-room' : ''}>
-                      <div className="server-row">
-                        <button type="button" onClick={() => setSelectedServer(server.id)}>
-                          {server.name}
-                        </button>
-                        <div className="server-actions">
-                          <button type="button" className="text-btn" onClick={() => handleEdit(server)}>
-                            Modifier
+            </aside>
+            
+            <section>
+              <div className="panel-card server-list-card">
+                <h2>Mes serveurs</h2>
+                <ul>
+                  {ownServers.length > 0 ? (
+                    ownServers.map((server) => (
+                      <li key={server.id} className={server.id === selectedServer ? 'active-room' : ''}>
+                        <div className="server-row">
+                          <button type="button" onClick={() => setSelectedServer(server.id)}>
+                            {server.name}
                           </button>
-                          <button type="button" className="text-btn danger" onClick={() => handleDelete(server.id)}>
-                            Supprimer
-                          </button>
+                          <div className="server-actions">
+                            <button type="button" className="primary-join" onClick={() => navigate(`/lobby?serverId=${server.id}&id=${userId}`)}>
+                              Rejoindre
+                            </button>
+                            <button type="button" className="text-btn" onClick={() => handleEdit(server)}>
+                              Modifier
+                            </button>
+                            <button type="button" className="text-btn danger" onClick={() => handleDelete(server.id)}>
+                              Supprimer
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </li>
-                  ))
-                ) : (
-                  <li className="empty-state">Aucun serveur personnel créé</li>
-                )}
-              </ul>
-            </div>
-          </aside>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="empty-state">Aucun serveur personnel créé</li>
+                  )}
+                </ul>
+              </div>
+            </section>
 
-          <section className="server-main">
-            <div className="panel-card preview-card">
-              <p className="eyebrow">Serveur sélectionné</p>
-              <h2>{selected?.name || 'Aucun serveur sélectionné'}</h2>
-              <p>{selected?.description || 'Sélectionnez un serveur personnel à gauche.'}</p>
-              <button
-                className="submit-btn"
-                type="button"
-                onClick={() => navigate('/lobby')}
-                disabled={!selected}
-              >
-                Continuer vers le salon
-              </button>
-            </div>
-          </section>
         </div>
       </section>
     </main>
