@@ -81,8 +81,12 @@ export default function Auth() {
       }
 
       setMessage(data.message)
-      // simple redirect after login/signup success
-      if (mode === 'login') navigate('/server')
+      const userId = data.user?.id
+      if (userId) {
+        navigate(`/server?id=${encodeURIComponent(userId)}`)
+      } else {
+        navigate('/server')
+      }
     } catch (error) {
       setMessage(error.message)
     }

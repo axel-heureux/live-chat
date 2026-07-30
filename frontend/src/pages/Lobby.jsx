@@ -15,7 +15,7 @@ export default function Lobby() {
           <h1>Salon</h1>
           <p className="subtitle">Choisissez un canal à gauche et discutez au centre.</p>
         </div>
-        <Link to="/" className="guest-btn">Entrer invité</Link>
+        <Link to="/" className="guest-btn">Déconnexion</Link>
       </header>
 
       <div className="lobby-grid">
