@@ -4,8 +4,8 @@ services:
     container_name: live-chat-db
     restart: always
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: root
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: 
       POSTGRES_DB: live-chat
     ports:
       - "5432:5432"
@@ -14,7 +14,7 @@ services:
       # Décommente la ligne ci-dessous si tu as un fichier SQL à exécuter au premier démarrage :
       # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d live-chat"]
+      test: ["CMD-SHELL", "pg_isready -U root -d live-chat"]
       interval: 5s
       timeout: 5s
       retries: 5
