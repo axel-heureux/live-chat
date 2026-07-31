@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export default function Server() {
   const [ownServers, setOwnServers] = useState([])
@@ -13,7 +15,7 @@ export default function Server() {
     }
   }, [searchParams])
   const [selectedServer, setSelectedServer] = useState(null)
-  const [form, setForm] = useState({ name: '', description: '' })
+  const [form, setForm] = useState({ name: '' })
   const [editId, setEditId] = useState(null)
   const navigate = useNavigate()
 
@@ -24,39 +26,123 @@ export default function Server() {
     setForm((current) => ({ ...current, [name]: value }))
   }
 
-  const handleCreateOrUpdate = () => {
-    if (!form.name.trim()) return
-
-    if (editId) {
-      setOwnServers((current) =>
-        current.map((item) =>
-          item.id === editId ? { ...item, name: form.name, description: form.description } : item
-        )
-      )
-      setEditId(null)
-    } else {
-      const newServer = {
-        id: `server-${Date.now()}`,
-        name: form.name,
-        description: form.description || 'Serveur personnel.'
-      }
-      setOwnServers((current) => [...current, newServer])
-      setSelectedServer(newServer.id)
+  const generateUuid = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
     }
 
-    setForm({ name: '', description: '' })
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+      const random = Math.floor(Math.random() * 16)
+      const value = char === 'x' ? random : (random & 0x3) | 0x8
+      return value.toString(16)
+    })
+  }
+
+  const handleCreateOrUpdate = async () => {
+    if (!form.name.trim()) return
+
+    try {
+      if (editId) {
+        // persist update
+        const res = await fetch(`${API_URL}/servers/${editId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: form.name })
+        })
+        if (!res.ok) throw new Error('Erreur lors de la mise à jour')
+      } else {
+        const newServer = {
+          id: generateUuid(),
+          name: form.name,
+          owner_id: userId || null
+        }
+
+        const res = await fetch(`${API_URL}/servers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newServer)
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.message || 'Erreur lors de la création du serveur')
+        }
+      }
+
+      // reload servers from backend (no front cache)
+      await loadServers()
+      setForm({ name: '' })
+      setEditId(null)
+    } catch (err) {
+      console.error('Failed to create/update server:', err)
+    }
+  }
+
+  useEffect(() => {
+    // load servers from backend (only servers owned by this user)
+    loadServers()
+  }, [userId])
+
+  async function loadServers() {
+    try {
+      const res = await fetch(`${API_URL}/servers`)
+      if (!res.ok) return setOwnServers([])
+      const data = await res.json()
+      if (userId) {
+        setOwnServers(data.filter((s) => s.owner_id === userId))
+      } else {
+        setOwnServers([])
+      }
+    } catch (err) {
+      console.error('Failed to load servers:', err)
+      setOwnServers([])
+    }
   }
 
   const handleEdit = (server) => {
     setEditId(server.id)
-    setForm({ name: server.name, description: server.description })
+    setForm({ name: server.name })
+  }
+
+  const handleJoinServer = async (serverId) => {
+    if (!userId) {
+      console.warn('No user id available for join')
+      return
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/servers/${serverId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // transmets userId directement comme String (UUID) sans Number()
+        body: JSON.stringify({ user_id: userId })
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.message || 'Erreur lors de l’adhésion au serveur')
+      }
+
+      navigate(`/lobby?serverId=${serverId}&id=${userId}`)
+    } catch (err) {
+      console.error('Failed to join server:', err)
+    }
   }
 
   const handleDelete = (serverId) => {
-    setOwnServers((current) => current.filter((item) => item.id !== serverId))
-    if (selectedServer === serverId) {
-      setSelectedServer(null)
-    }
+    // delete on backend then reload list
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_URL}/servers/${serverId}`, { method: 'DELETE' })
+        if (!res.ok) {
+          console.warn('Delete returned', res.status)
+        }
+      } catch (err) {
+        console.error('Failed to delete on server:', err)
+      } finally {
+        await loadServers()
+        if (selectedServer === serverId) setSelectedServer(null)
+      }
+    })()
   }
 
   return (
@@ -83,15 +169,6 @@ export default function Server() {
                   placeholder="Mon serveur privé"
                 />
               </label>
-              <label>
-                Description
-                <input
-                  name="description"
-                  value={form.description}
-                  onChange={handleChange}
-                  placeholder="Par exemple : discussion texte ou vocal"
-                />
-              </label>
               <button type="button" className="submit-btn" onClick={handleCreateOrUpdate}>
                 {editId ? 'Sauvegarder le serveur' : 'Créer le serveur'}
               </button>
@@ -107,51 +184,44 @@ export default function Server() {
                   Annuler
                 </button>
               )}
+              <div className="logout-action">
+                <Link to="/" className="text-btn danger">Déconnexion</Link>
+              </div>
             </div>
-
-            <div className="panel-card server-list-card">
-              <h2>Mes serveurs</h2>
-              <ul>
-                {ownServers.length > 0 ? (
-                  ownServers.map((server) => (
-                    <li key={server.id} className={server.id === selectedServer ? 'active-room' : ''}>
-                      <div className="server-row">
-                        <button type="button" onClick={() => setSelectedServer(server.id)}>
-                          {server.name}
-                        </button>
-                        <div className="server-actions">
-                          <button type="button" className="text-btn" onClick={() => handleEdit(server)}>
-                            Modifier
+            </aside>
+            
+            <section>
+              <div className="panel-card server-list-card">
+                <h2>Mes serveurs</h2>
+                <ul>
+                  {ownServers.length > 0 ? (
+                    ownServers.map((server) => (
+                      <li key={server.id} className={server.id === selectedServer ? 'active-room' : ''}>
+                        <div className="server-row">
+                          <button type="button" onClick={() => setSelectedServer(server.id)}>
+                            {server.name}
                           </button>
-                          <button type="button" className="text-btn danger" onClick={() => handleDelete(server.id)}>
-                            Supprimer
-                          </button>
+                          <div className="server-actions">
+                            <button type="button" className="primary-join" onClick={() => handleJoinServer(server.id)}>
+                              Rejoindre
+                            </button>
+                            <button type="button" className="text-btn" onClick={() => handleEdit(server)}>
+                              Modifier
+                            </button>
+                            <button type="button" className="text-btn danger" onClick={() => handleDelete(server.id)}>
+                              Supprimer
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </li>
-                  ))
-                ) : (
-                  <li className="empty-state">Aucun serveur personnel créé</li>
-                )}
-              </ul>
-            </div>
-          </aside>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="empty-state">Aucun serveur personnel créé</li>
+                  )}
+                </ul>
+              </div>
+            </section>
 
-          <section className="server-main">
-            <div className="panel-card preview-card">
-              <p className="eyebrow">Serveur sélectionné</p>
-              <h2>{selected?.name || 'Aucun serveur sélectionné'}</h2>
-              <p>{selected?.description || 'Sélectionnez un serveur personnel à gauche.'}</p>
-              <button
-                className="submit-btn"
-                type="button"
-                onClick={() => navigate('/lobby')}
-                disabled={!selected}
-              >
-                Continuer vers le salon
-              </button>
-            </div>
-          </section>
         </div>
       </section>
     </main>

@@ -5,6 +5,8 @@ const bcrypt = require('bcryptjs');
 const registerHealthRoutes = require('./routes/health');
 const registerAuthRoutes = require('./routes/auth');
 const registerUserRoutes = require('./routes/users');
+const registerServerRoutes = require('./routes/servers');
+const registerChannelRoutes = require('./routes/channels');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -49,6 +51,8 @@ async function connectDb() {
     registerHealthRoutes(app);
     registerAuthRoutes(app, client, options, bcrypt);
     registerUserRoutes(app, client);
+    registerServerRoutes(app, client);
+    registerChannelRoutes(app, client);
   } catch (error) {
     console.error('PostgreSQL connection failed:', error);
   }
