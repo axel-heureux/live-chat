@@ -12,7 +12,7 @@ export default function Lobby() {
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [textRooms, setTextRooms] = useState([])
   const [voiceRooms, setVoiceRooms] = useState([])
-  const [users] = useState([])
+  const [users, setUsers] = useState([])
 
   const [channelForm, setChannelForm] = useState({ name: '', type: 'text' })
   const [editChannelId, setEditChannelId] = useState(null)
@@ -28,8 +28,31 @@ export default function Lobby() {
     if (serverId) {
       loadServer()
       loadChannels()
+      loadUsers()
     }
   }, [serverId])
+
+  async function loadUsers() {
+    try {
+      // 1. On force l'ID de votre serveur en dur ici pour le test
+      const forcedServerId = 'b0eff0f3-cf59-469c-a405-905d4f273fde';
+      
+      // 2. On utilise cet ID forcé pour la requête
+      const res = await fetch(`${API_URL}/servers/${forcedServerId}/users`)
+      
+      if (!res.ok) {
+        console.error("Erreur serveur :", res.status)
+        return
+      }
+      
+      const data = await res.json()
+      console.log("Utilisateurs (FORCÉ) :", data) // Regardez votre console (F12)
+      setUsers(data)
+      
+    } catch (err) {
+      console.error('Failed to load users:', err)
+    }
+  }
 
   async function loadServer() {
     try {
@@ -228,12 +251,16 @@ export default function Lobby() {
 
         <aside className="users-panel">
           <div className="panel-card users-card">
-            <h2>Utilisateurs connectés</h2>
+            <h2>Utilisateurs</h2>
             <ul>
-              {users.length > 0 ? (
-                users.map((user) => <li key={user}>{user}</li>)
+              {users && users.length > 0 ? (
+                users.map((user, index) => (
+                  <li key={user.user_id || index}>
+                    {user.pseudo || `Utilisateur (${user.user_id})`}
+                  </li>
+                ))
               ) : (
-                <li className="empty-state">Aucun utilisateur connecté</li>
+                <li className="empty-state">Aucun utilisateur trouvé</li>
               )}
             </ul>
           </div>

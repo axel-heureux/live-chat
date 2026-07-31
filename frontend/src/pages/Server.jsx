@@ -15,7 +15,7 @@ export default function Server() {
     }
   }, [searchParams])
   const [selectedServer, setSelectedServer] = useState(null)
-  const [form, setForm] = useState({ name: '', description: '' })
+  const [form, setForm] = useState({ name: '' })
   const [editId, setEditId] = useState(null)
   const navigate = useNavigate()
 
@@ -24,6 +24,18 @@ export default function Server() {
   const handleChange = (event) => {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: value }))
+  }
+
+  const generateUuid = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+      const random = Math.floor(Math.random() * 16)
+      const value = char === 'x' ? random : (random & 0x3) | 0x8
+      return value.toString(16)
+    })
   }
 
   const handleCreateOrUpdate = async () => {
@@ -35,14 +47,13 @@ export default function Server() {
         const res = await fetch(`${API_URL}/servers/${editId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: form.name, description: form.description })
+          body: JSON.stringify({ name: form.name })
         })
         if (!res.ok) throw new Error('Erreur lors de la mise à jour')
       } else {
         const newServer = {
-          id: `server-${Date.now()}`,
+          id: generateUuid(),
           name: form.name,
-          description: form.description || 'Serveur personnel.',
           owner_id: userId || null
         }
 
@@ -59,7 +70,7 @@ export default function Server() {
 
       // reload servers from backend (no front cache)
       await loadServers()
-      setForm({ name: '', description: '' })
+      setForm({ name: '' })
       setEditId(null)
     } catch (err) {
       console.error('Failed to create/update server:', err)
@@ -89,7 +100,32 @@ export default function Server() {
 
   const handleEdit = (server) => {
     setEditId(server.id)
-    setForm({ name: server.name, description: server.description })
+    setForm({ name: server.name })
+  }
+
+  const handleJoinServer = async (serverId) => {
+    if (!userId) {
+      console.warn('No user id available for join')
+      return
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/servers/${serverId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // transmets userId directement comme String (UUID) sans Number()
+        body: JSON.stringify({ user_id: userId })
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.message || 'Erreur lors de l’adhésion au serveur')
+      }
+
+      navigate(`/lobby?serverId=${serverId}&id=${userId}`)
+    } catch (err) {
+      console.error('Failed to join server:', err)
+    }
   }
 
   const handleDelete = (serverId) => {
@@ -133,15 +169,6 @@ export default function Server() {
                   placeholder="Mon serveur privé"
                 />
               </label>
-              <label>
-                Description
-                <input
-                  name="description"
-                  value={form.description}
-                  onChange={handleChange}
-                  placeholder="Par exemple : discussion texte ou vocal"
-                />
-              </label>
               <button type="button" className="submit-btn" onClick={handleCreateOrUpdate}>
                 {editId ? 'Sauvegarder le serveur' : 'Créer le serveur'}
               </button>
@@ -175,7 +202,7 @@ export default function Server() {
                             {server.name}
                           </button>
                           <div className="server-actions">
-                            <button type="button" className="primary-join" onClick={() => navigate(`/lobby?serverId=${server.id}&id=${userId}`)}>
+                            <button type="button" className="primary-join" onClick={() => handleJoinServer(server.id)}>
                               Rejoindre
                             </button>
                             <button type="button" className="text-btn" onClick={() => handleEdit(server)}>
